@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fastfood-config
+data:
+  DATABASE_HOST: "${RDS_ENDPOINT}"
+  DATABASE_PORT: "3306"
+  DATABASE_USER: "admin"
+  DATABASE_NAME: "fastfood"
+  PORT: "3000"
+  MERCADO_PAGO_BASE_URL: "https://api.mercadopago.com"
+  MERCADO_PAGO_USER_ID: "2597335196"
+  MERCADO_PAGO_POS_ID: "SUC001POS001"
+  MERCADO_PAGO_TOKEN: "APP_USR-2567930119411700-080101-8cf824f59304a695fb7fb3e5ca0357df-2597335196"
+  MERCADO_PAGO_NOTIFICATION_URL: "http://${LOADBALANCER_URL}/webhook"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: fastfood-secrets
+type: Opaque
+data:
+  DATABASE_PASS: YWRtaW4xMjM=
+  DATABASE_ROOT_PASS: cm9vdDEyMw==

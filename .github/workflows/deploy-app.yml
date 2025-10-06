@@ -1,0 +1,117 @@
+name: 'Deploy Application to Kubernetes'
+
+on:
+  repository_dispatch:
+    types: [deploy-app]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to deploy'
+        required: true
+        default: 'latest'
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy:
+    name: 'Deploy to EKS'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: k8s
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    - name: Configure kubectl
+      run: |
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name fast-food-cluster-prd
+
+    - name: Get ECR URI from Terraform
+      id: ecr_uri
+      run: |
+        cd ../terraform
+        echo "ecr_uri=$(terraform output -raw ecr_repository_url)" >> $GITHUB_OUTPUT
+
+    - name: Get RDS Endpoint
+      id: rds_endpoint
+      run: |
+        echo "rds_endpoint=$(aws rds describe-db-instances --db-instance-identifier fastfood-db --query 'DBInstances[0].Endpoint.Address' --output text)" >> $GITHUB_OUTPUT
+
+    - name: Set Image Tag
+      id: image_tag
+      run: |
+        if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+          echo "image_tag=${{ github.event.client_payload.image_tag }}" >> $GITHUB_OUTPUT
+        else
+          echo "image_tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Deploy Services and LoadBalancer
+      run: |
+        kubectl apply -f 01-api-service.yaml
+        kubectl apply -f 02-loadbalancer.yaml
+
+    - name: Wait for LoadBalancer
+      id: loadbalancer
+      run: |
+        echo "Waiting for LoadBalancer External IP..."
+        for i in {1..30}; do
+          LOADBALANCER_URL=$(kubectl get svc fastfood-api-loadbalancer -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null)
+          if [ ! -z "$LOADBALANCER_URL" ]; then
+            echo "loadbalancer_url=$LOADBALANCER_URL" >> $GITHUB_OUTPUT
+            break
+          fi
+          echo "Attempt $i/30: Waiting for LoadBalancer..."
+          sleep 10
+        done
+        if [ -z "$LOADBALANCER_URL" ]; then
+          echo "loadbalancer_url=pending" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Deploy ConfigMap and Secrets
+      run: |
+        export LOADBALANCER_URL="${{ steps.loadbalancer.outputs.loadbalancer_url }}"
+        export RDS_ENDPOINT="${{ steps.rds_endpoint.outputs.rds_endpoint }}"
+        envsubst < 03-config.yaml | kubectl apply -f -
+
+    - name: Deploy Application
+      run: |
+        export ECR_URI="${{ steps.ecr_uri.outputs.ecr_uri }}"
+        export IMAGE_TAG="${{ steps.image_tag.outputs.image_tag }}"
+        export RDS_ENDPOINT="${{ steps.rds_endpoint.outputs.rds_endpoint }}"
+        envsubst < 04-api-deployment.yaml | kubectl apply -f -
+
+    - name: Wait for Application
+      run: |
+        kubectl rollout status deployment/fastfood-api --timeout=300s
+
+    - name: Run Database Migrations
+      run: |
+        API_POD=$(kubectl get pods -l app=fastfood-api -o jsonpath="{.items[0].metadata.name}")
+        kubectl exec $API_POD -- npx prisma migrate deploy
+
+    - name: Deploy HPA
+      run: |
+        kubectl apply -f 05-hpa.yaml
+
+    - name: Verify Deployment
+      run: |
+        kubectl get pods -l app=fastfood-api
+        kubectl get svc
+        kubectl get hpa
