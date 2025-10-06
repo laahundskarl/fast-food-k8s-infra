@@ -2,7 +2,7 @@ name: 'K8s Infrastructure - Terraform Apply'
 
 on:
   push:
-    branches: [main]
+    branches: [modulo_3]
     paths:
       - 'terraform/**'
       - '.github/workflows/terraform-apply.yml'
