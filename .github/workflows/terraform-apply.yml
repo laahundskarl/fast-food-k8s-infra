@@ -8,6 +8,13 @@ on:
       - '.github/workflows/terraform-apply.yml'
   repository_dispatch:
     types: [database-ready]
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Force deployment from current branch'
+        required: false
+        type: boolean
+        default: false
 
 env:
   TF_VERSION: '1.5.0'
@@ -93,3 +100,4 @@ jobs:
               trigger_source: 'k8s-infrastructure'
             }
           })
+
