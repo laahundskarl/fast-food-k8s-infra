@@ -1,0 +1,51 @@
+name: Debug Database Connectivity
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  debug-connectivity:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+        aws-region: us-east-1
+
+    - name: Debug database connectivity
+      run: |
+        # Update kubeconfig
+        aws eks --region us-east-1 update-kubeconfig --name $(aws eks list-clusters --region us-east-1 --query 'clusters[0]' --output text)
+        
+        echo "🔍 Verificando RDS instances..."
+        aws rds describe-db-instances --region us-east-1 --query 'DBInstances[?contains(DBInstanceIdentifier,`fastfood`)].{ID:DBInstanceIdentifier,Status:DBInstanceStatus,Endpoint:Endpoint.Address}' --output table
+        
+        echo ""
+        echo "🔍 Verificando security groups do RDS..."
+        aws rds describe-db-instances --region us-east-1 --query 'DBInstances[?contains(DBInstanceIdentifier,`fastfood`)].VpcSecurityGroups[*].{GroupId:VpcSecurityGroupId,Status:Status}' --output table
+        
+        echo ""
+        echo "🔍 Testando conectividade do pod com o banco..."
+        API_POD=$(kubectl get pods -l app=fastfood-api -o jsonpath="{.items[0].metadata.name}")
+        echo "Pod selecionado: $API_POD"
+        
+        echo ""
+        echo "🔍 Testando ping para o endpoint do banco..."
+        kubectl exec $API_POD -- ping -c 3 fastfood-db.czyqradinnne.us-east-1.rds.amazonaws.com || echo "Ping falhou"
+        
+        echo ""
+        echo "🔍 Testando conectividade TCP na porta 3306..."
+        kubectl exec $API_POD -- nc -zv fastfood-db.czyqradinnne.us-east-1.rds.amazonaws.com 3306 || echo "Conexão TCP falhou"
+        
+        echo ""
+        echo "🔍 Verificando DNS resolution..."
+        kubectl exec $API_POD -- nslookup fastfood-db.czyqradinnne.us-east-1.rds.amazonaws.com || echo "DNS resolution falhou"
+        
+        echo ""
+        echo "🔍 Verificando variáveis de ambiente do pod..."
+        kubectl exec $API_POD -- env | grep -E "(DATABASE|JWT)" || echo "Variáveis não encontradas"
