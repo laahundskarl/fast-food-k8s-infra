@@ -22,6 +22,16 @@ resource "aws_iam_role_policy_attachment" "lambda_auth_basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+# Arquivo ZIP com código placeholder
+data "archive_file" "lambda_placeholder" {
+  type        = "zip"
+  output_path = "${path.module}/lambda_placeholder.zip"
+  source {
+    content  = "exports.handler = async (event) => { return { statusCode: 200, body: 'Hello from Lambda!' }; };"
+    filename = "index.js"
+  }
+}
+
 # Função Lambda
 resource "aws_lambda_function" "auth_lambda" {
   function_name = "fast-food-auth"
@@ -29,6 +39,8 @@ resource "aws_lambda_function" "auth_lambda" {
   handler      = "index.handler"
   runtime      = "nodejs18.x"
   timeout      = 10
+  filename     = data.archive_file.lambda_placeholder.output_path
+  source_code_hash = data.archive_file.lambda_placeholder.output_base64sha256
 
   depends_on = [aws_iam_role_policy_attachment.lambda_auth_basic]
 }
