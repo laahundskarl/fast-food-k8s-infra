@@ -99,7 +99,15 @@ jobs:
 
     - name: Wait for Application
       run: |
-        kubectl rollout status deployment/fastfood-api --timeout=300s
+        echo "🔍 Verificando status do deployment..."
+        kubectl get deployments
+        kubectl get pods -l app=fastfood-api
+        
+        echo "📋 Descrevendo deployment para diagnóstico..."
+        kubectl describe deployment fastfood-api
+        
+        echo "⏳ Aguardando rollout do deployment (timeout: 600s)..."
+        kubectl rollout status deployment/fastfood-api --timeout=600s
 
     - name: Run Database Migrations
       run: |
