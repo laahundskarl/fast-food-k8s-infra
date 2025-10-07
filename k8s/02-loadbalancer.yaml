@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fastfood-api-loadbalancer
+spec:
+  type: LoadBalancer
+  selector:
+    app: fastfood-api
+  ports:
+  - port: 80
+    targetPort: 3000
+    protocol: TCP

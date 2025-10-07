@@ -1,0 +1,86 @@
+name: 'Infrastructure - Validate Kubernetes'
+
+on:
+  pull_request:
+    branches: [modulo_3]
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform-plan.yml'
+
+env:
+  TF_VERSION: '1.5.0'
+
+jobs:
+  terraform-plan:
+    name: 'Terraform Plan'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+        aws-region: us-east-1
+
+    - name: Terraform Init
+      id: init
+      run: terraform init
+
+    - name: Terraform Validate
+      id: validate
+      run: terraform validate -no-color
+
+    - name: Terraform Plan
+      id: plan
+      run: terraform plan -no-color -input=false
+      continue-on-error: true
+
+    - name: Display Plan Results
+      run: |
+        echo "🚀 Kubernetes Infrastructure - Terraform Plan Results"
+        echo "====================================================="
+        echo ""
+        echo "📋 Execution Summary:"
+        echo "  • Init Status: ${{ steps.init.outcome }}"
+        echo "  • Validation Status: ${{ steps.validate.outcome }}"
+        echo "  • Plan Status: ${{ steps.plan.outcome }}"
+        echo ""
+        
+        if [ "${{ steps.validate.outcome }}" = "success" ]; then
+          echo "✅ Terraform configuration is valid"
+        else
+          echo "❌ Terraform validation failed"
+        fi
+        
+        if [ "${{ steps.plan.outcome }}" = "success" ]; then
+          echo "✅ Terraform plan completed successfully"
+          echo "📖 Review the 'Terraform Plan' step above for detailed changes"
+          echo ""
+          echo "🏗️ Planned infrastructure:"
+          echo "  • EKS Cluster (fast-food-cluster-prd)"
+          echo "  • ECR Repository (fastfood-api)"
+          echo "  • Worker nodes and networking"
+        else
+          echo "❌ Terraform plan failed"
+          echo "🔍 Check the 'Terraform Plan' step above for error details"
+          exit 1
+        fi
+        
+        echo ""
+        echo "💡 Next steps after PR approval:"
+        echo "  • Merge this PR to trigger infrastructure deployment"
+        echo "  • EKS cluster will be created and configured"
+        echo "  • Application can then be deployed automatically"

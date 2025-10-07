@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fastfood-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fastfood-api
+  template:
+    metadata:
+      labels:
+        app: fastfood-api
+        tier: backend
+        component: api
+        version: v1.0
+    spec:
+      containers:
+      - name: fastfood-api
+        image: ${ECR_URI}:${IMAGE_TAG}
+        imagePullPolicy: Always
+        command: ["node", "dist/index.js"]  # Skip wait-for.sh, use only node
+        ports:
+        - containerPort: 3000
+        env:
+        - name: DATABASE_URL
+          value: "mysql://admin:admin123@${RDS_ENDPOINT}/fastfood?allowPublicKeyRetrieval=true"
+        envFrom:
+        - configMapRef:
+            name: fastfood-config
+        - secretRef:
+            name: fastfood-secrets
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        readinessProbe:
+          httpGet:
+            path: /docs  # Swagger sempre funciona
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /docs  # Swagger sempre funciona
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 30
