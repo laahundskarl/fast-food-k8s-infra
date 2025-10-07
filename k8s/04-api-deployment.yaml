@@ -14,6 +14,8 @@ spec:
       app: fastfood-api
   template:
     metadata:
+      annotations:
+        deployment.kubernetes.io/restart: "$(date +%s)"  # Force pod recreation
       labels:
         app: fastfood-api
         tier: backend
