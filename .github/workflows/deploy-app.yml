@@ -176,6 +176,21 @@ jobs:
       run: |
         API_POD=$(kubectl get pods -l app=fastfood-api -o jsonpath="{.items[0].metadata.name}")
         
+        echo "🔍 Verificando configurações de rede AWS..."
+        echo "📋 Detalhes do RDS:"
+        aws rds describe-db-instances --db-instance-identifier fastfood-db --query 'DBInstances[0].{VpcId: DBSubnetGroup.VpcId, SubnetIds: DBSubnetGroup.Subnets[*].SubnetIdentifier, SecurityGroups: VpcSecurityGroups[*].VpcSecurityGroupId, AvailabilityZone: AvailabilityZone, Endpoint: Endpoint.Address}' --output table
+        
+        echo ""
+        echo "📋 Detalhes do EKS Cluster:"
+        aws eks describe-cluster --name fast-food-cluster-prd --query 'cluster.resourcesVpcConfig.{VpcId: vpcId, SubnetIds: subnetIds, SecurityGroupIds: securityGroupIds}' --output table
+        
+        echo ""
+        echo "📋 Security Groups do RDS:"
+        RDS_SG=$(aws rds describe-db-instances --db-instance-identifier fastfood-db --query 'DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId' --output text)
+        echo "RDS Security Group: $RDS_SG"
+        aws ec2 describe-security-groups --group-ids $RDS_SG --query 'SecurityGroups[0].{GroupId: GroupId, IngressRules: IpPermissions[*]}' --output table
+        
+        echo ""
         echo "🔍 Testando conectividade antes da migração..."
         echo "📋 Informações do pod:"
         kubectl describe pod $API_POD | grep -A 10 "IP:"
@@ -193,10 +208,6 @@ jobs:
           echo ''
           echo '--- Verificando se a porta 3306 está aberta ---'
           nc -z -v fastfood-db.czyqradinnne.us-east-1.rds.amazonaws.com 3306 || echo 'netcat falhou'
-          
-          echo ''
-          echo '--- Testando telnet para a porta 3306 ---'
-          timeout 5 telnet fastfood-db.czyqradinnne.us-east-1.rds.amazonaws.com 3306 || echo 'telnet falhou'
         " || echo "Testes de conectividade falharam"
         
         echo ""
