@@ -23,3 +23,4 @@ type: Opaque
 data:
   DATABASE_PASS: YWRtaW4xMjM=
   DATABASE_ROOT_PASS: cm9vdDEyMw==
+  JWT_SECRET: bXktc3VwZXItc2VjcmV0LWp3dC1rZXktZm9yLWZhc3Rmb29kLWFwaS0yMDI1
