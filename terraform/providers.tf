@@ -10,6 +10,12 @@ terraform {
     }
   }
   required_version = ">= 1.0"
+
+  backend "s3" {
+    bucket = "fastfood-terraform-state-bucket"
+    key    = "infra/terraform.tfstate"
+    region = "us-east-1"
+  }
 }
 
 provider "aws" {
