@@ -2,7 +2,30 @@ name: 'CD - Deploy Application'
 
 on:
   repository_dispatch:
-    types: [deploy-app]
+     - name: Set Image Tag
+      id: image_tag
+      run: |
+        if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+          echo "image_tag=${{ github.event.client_payload.image_tag }}" >> $GITHUB_OUTPUT
+        else
+          echo "image_tag=latest" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Check ECR Image Exists
+      run: |
+        ECR_URI="${{ steps.ecr_uri.outputs.ecr_uri }}"
+        IMAGE_TAG="${{ steps.image_tag.outputs.image_tag }}"
+        echo "Checking if image exists: $ECR_URI:$IMAGE_TAG"
+        
+        # Try to get image details
+        if aws ecr describe-images --repository-name fastfood-api --image-ids imageTag=$IMAGE_TAG --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+          echo "✅ Image $ECR_URI:$IMAGE_TAG exists in ECR"
+        else
+          echo "❌ Image $ECR_URI:$IMAGE_TAG does NOT exist in ECR"
+          echo "Available images in repository:"
+          aws ecr describe-images --repository-name fastfood-api --region ${{ env.AWS_REGION }} --query 'imageDetails[*].imageTags' --output table || echo "No images found or repository doesn't exist"
+          exit 1
+        fi: [deploy-app]
   workflow_dispatch:
     inputs:
       image_tag:
@@ -114,15 +137,40 @@ jobs:
 
     - name: Wait for Application
       run: |
-        echo "Verificando status do deployment..."
+        echo "🔍 Verificando status inicial do deployment..."
         kubectl get deployments
         kubectl get pods -l app=fastfood-api
         
-        echo "Descrevendo deployment para diagnóstico..."
+        echo ""
+        echo "📝 Descrevendo deployment para diagnóstico..."
         kubectl describe deployment fastfood-api
         
-        echo "Aguardando rollout do deployment (timeout: 600s)..."
-        kubectl rollout status deployment/fastfood-api --timeout=600s
+        echo ""
+        echo "🔍 Verificando logs dos pods (se existirem)..."
+        for pod in $(kubectl get pods -l app=fastfood-api -o jsonpath='{.items[*].metadata.name}'); do
+          echo "--- Logs do pod $pod ---"
+          kubectl logs $pod --tail=50 || echo "Não foi possível obter logs do pod $pod"
+          echo ""
+          echo "--- Eventos do pod $pod ---"
+          kubectl describe pod $pod | grep -A 20 "Events:" || echo "Não foi possível obter eventos do pod $pod"
+          echo ""
+        done
+        
+        echo "⏳ Aguardando rollout do deployment (timeout: 300s)..."
+        if ! kubectl rollout status deployment/fastfood-api --timeout=300s; then
+          echo ""
+          echo "❌ Rollout falhou! Verificando status final..."
+          kubectl get pods -l app=fastfood-api
+          kubectl describe deployment fastfood-api
+          
+          echo ""
+          echo "📋 Logs finais dos pods:"
+          for pod in $(kubectl get pods -l app=fastfood-api -o jsonpath='{.items[*].metadata.name}'); do
+            echo "--- Logs finais do pod $pod ---"
+            kubectl logs $pod --tail=100 || echo "Não foi possível obter logs do pod $pod"
+          done
+          exit 1
+        fi
 
     - name: Run Database Migrations
       run: |
