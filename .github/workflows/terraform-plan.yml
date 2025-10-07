@@ -48,43 +48,39 @@ jobs:
       run: terraform plan -no-color -input=false
       continue-on-error: true
 
-    - name: Update Pull Request
-      uses: actions/github-script@v6
-      if: github.event_name == 'pull_request'
-      env:
-        PLAN: "terraform\n${{ steps.plan.outputs.stdout }}"
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const output = `#### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
-          #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
-          <details><summary>Validation Output</summary>
-
-          \`\`\`\n
-          ${{ steps.validate.outputs.stdout }}
-          \`\`\`
-
-          </details>
-
-          #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
-
-          <details><summary>Show Plan</summary>
-
-          \`\`\`\n
-          ${process.env.PLAN}
-          \`\`\`
-
-          </details>
-
-          *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
-
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: output
-          })
-
-    - name: Terraform Plan Status
-      if: steps.plan.outcome == 'failure'
-      run: exit 1
+    - name: Display Plan Results
+      run: |
+        echo "🚀 Kubernetes Infrastructure - Terraform Plan Results"
+        echo "====================================================="
+        echo ""
+        echo "📋 Execution Summary:"
+        echo "  • Init Status: ${{ steps.init.outcome }}"
+        echo "  • Validation Status: ${{ steps.validate.outcome }}"
+        echo "  • Plan Status: ${{ steps.plan.outcome }}"
+        echo ""
+        
+        if [ "${{ steps.validate.outcome }}" = "success" ]; then
+          echo "✅ Terraform configuration is valid"
+        else
+          echo "❌ Terraform validation failed"
+        fi
+        
+        if [ "${{ steps.plan.outcome }}" = "success" ]; then
+          echo "✅ Terraform plan completed successfully"
+          echo "📖 Review the 'Terraform Plan' step above for detailed changes"
+          echo ""
+          echo "🏗️ Planned infrastructure:"
+          echo "  • EKS Cluster (fast-food-cluster-prd)"
+          echo "  • ECR Repository (fastfood-api)"
+          echo "  • Worker nodes and networking"
+        else
+          echo "❌ Terraform plan failed"
+          echo "🔍 Check the 'Terraform Plan' step above for error details"
+          exit 1
+        fi
+        
+        echo ""
+        echo "💡 Next steps after PR approval:"
+        echo "  • Merge this PR to trigger infrastructure deployment"
+        echo "  • EKS cluster will be created and configured"
+        echo "  • Application can then be deployed automatically"
