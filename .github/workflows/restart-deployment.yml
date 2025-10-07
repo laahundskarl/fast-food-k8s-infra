@@ -1,0 +1,60 @@
+name: Restart Deployment with JWT_SECRET
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  id-token: write
+  contents: read
+
+jobs:
+  restart-deployment:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+        aws-region: us-east-1
+
+    - name: Update kubeconfig
+      run: |
+        aws eks --region us-east-1 update-kubeconfig --name $(aws eks list-clusters --region us-east-1 --query 'clusters[0]' --output text)
+
+    - name: Force restart application
+      run: |
+        echo "🔄 Aplicando configuração atualizada com JWT_SECRET..."
+        kubectl apply -f k8s/03-config.yaml
+        
+        echo ""
+        echo "🗑️ Removendo pods antigos para forçar recriação com nova configuração..."
+        kubectl delete pods -l app=fastfood-api --force --grace-period=0
+        
+        echo ""
+        echo "♻️ Reiniciando deployment..."
+        kubectl rollout restart deployment/fastfood-api
+        
+        echo ""
+        echo "⏳ Aguardando 30s antes de verificar status..."
+        sleep 30
+        
+        echo ""
+        echo "🔍 Verificando status do deployment..."
+        kubectl get pods -l app=fastfood-api
+        kubectl describe deployment fastfood-api
+        
+        echo ""
+        echo "📋 Verificando logs dos novos pods..."
+        for pod in $(kubectl get pods -l app=fastfood-api -o jsonpath='{.items[*].metadata.name}'); do
+          echo "--- Logs do pod $pod ---"
+          kubectl logs $pod --tail=20 || echo "Pod ainda não tem logs"
+          echo ""
+        done
+        
+        echo ""
+        echo "⏳ Aguardando rollout (timeout: 600s)..."
+        kubectl rollout status deployment/fastfood-api --timeout=600s
