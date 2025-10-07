@@ -1,0 +1,48 @@
+﻿name: Debug Network ACLs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug-nacls:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+        aws-region: us-east-1
+
+    - name: Investigate Network ACLs
+      run: |
+        echo " Investigando Network ACLs..."
+        
+        echo " Detalhes das subnets:"
+        aws ec2 describe-subnets --subnet-ids subnet-07fe020cefc4bd241 subnet-08d34ed68511f3917 --query 'Subnets[*].{SubnetId: SubnetId, VpcId: VpcId, CidrBlock: CidrBlock, AvailabilityZone: AvailabilityZone, NetworkAclAssociations: NetworkAclAssociations[*].NetworkAclId}' --output table
+        
+        echo ""
+        echo " Network ACLs associadas:"
+        NACL_IDS=$(aws ec2 describe-subnets --subnet-ids subnet-07fe020cefc4bd241 subnet-08d34ed68511f3917 --query 'Subnets[*].NetworkAclAssociations[*].NetworkAclId' --output text | tr '\t' ' ' | tr '\n' ' ')
+        
+        for nacl_id in $NACL_IDS; do
+          if [ ! -z "$nacl_id" ]; then
+            echo "--- NACL: $nacl_id ---"
+            aws ec2 describe-network-acls --network-acl-ids $nacl_id --query 'NetworkAcls[0].{NetworkAclId: NetworkAclId, VpcId: VpcId, IsDefault: IsDefault, Entries: Entries[?RuleAction==deny]}' --output table
+            
+            echo ""
+            echo "Regras de NEGAÇÃO (DENY):"
+            aws ec2 describe-network-acls --network-acl-ids $nacl_id --query 'NetworkAcls[0].Entries[?RuleAction==deny]' --output table
+            
+            echo ""
+            echo "Regras de PERMISSÃO (ALLOW):"
+            aws ec2 describe-network-acls --network-acl-ids $nacl_id --query 'NetworkAcls[0].Entries[?RuleAction==llow]' --output table
+            echo ""
+          fi
+        done
+        
+        echo ""
+        echo " Verificando rota tables:"
+        aws ec2 describe-route-tables --filters "Name=vpc-id,Values=vpc-080181ea9694b9b94" --query 'RouteTables[*].{RouteTableId: RouteTableId, VpcId: VpcId, Associations: Associations[*].SubnetId, Routes: Routes[*]}' --output table
