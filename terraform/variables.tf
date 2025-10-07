@@ -59,3 +59,10 @@ variable "ecr_force_delete" {
   type        = bool
   default     = true
 }
+
+# Lambda variables
+variable "lambda_auth_arn" {
+  description = "ARN da função Lambda para autenticação"
+  type        = string
+  default     = "{meuARN}"
+}
