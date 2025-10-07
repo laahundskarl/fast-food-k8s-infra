@@ -44,8 +44,8 @@ jobs:
 
     - name: Get ECR URI from Terraform
       id: ecr_uri
+      working-directory: terraform
       run: |
-        cd terraform
         echo "ecr_uri=$(terraform output -raw ecr_repository_url | tr -d '\n' | tr -d '\r')" >> $GITHUB_OUTPUT
 
     - name: Get RDS Endpoint
@@ -85,12 +85,14 @@ jobs:
         fi
 
     - name: Deploy ConfigMap and Secrets
+      working-directory: k8s
       run: |
         export LOADBALANCER_URL="${{ steps.loadbalancer.outputs.loadbalancer_url }}"
         export RDS_ENDPOINT="${{ steps.rds_endpoint.outputs.rds_endpoint }}"
         envsubst < 03-config.yaml | kubectl apply -f -
 
     - name: Deploy Application
+      working-directory: k8s
       run: |
         export ECR_URI="${{ steps.ecr_uri.outputs.ecr_uri }}"
         export IMAGE_TAG="${{ steps.image_tag.outputs.image_tag }}"
@@ -118,6 +120,7 @@ jobs:
         kubectl exec $API_POD -- npx prisma migrate deploy
 
     - name: Deploy HPA
+      working-directory: k8s
       run: |
         kubectl apply -f 05-hpa.yaml
 
