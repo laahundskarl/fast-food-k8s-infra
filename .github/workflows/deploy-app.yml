@@ -1,4 +1,4 @@
-name: 'Deploy Application to Kubernetes'
+name: 'CD - Deploy Application'
 
 on:
   repository_dispatch:

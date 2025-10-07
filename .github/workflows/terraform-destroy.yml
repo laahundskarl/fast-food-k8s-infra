@@ -1,4 +1,4 @@
-name: 'K8s Infrastructure - Terraform Destroy'
+name: 'Cleanup - Destroy Kubernetes'
 
 on:
   workflow_dispatch:

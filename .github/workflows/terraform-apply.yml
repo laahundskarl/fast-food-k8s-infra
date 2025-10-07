@@ -1,4 +1,4 @@
-name: 'K8s Infrastructure - Terraform Apply'
+name: 'Infrastructure - Deploy Kubernetes'
 
 on:
   push:
