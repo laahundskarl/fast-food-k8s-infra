@@ -53,10 +53,10 @@ jobs:
       run: |
         echo "🔧 Configurando variáveis de ambiente da Lambda..."
         
-        # Mesmas variáveis usadas no deploy-app.yml
-        aws lambda update-function-configuration \
-          --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
-          --environment Variables='{
+        # Criar arquivo JSON temporário para evitar problemas com aspas
+        cat > env_vars.json << 'EOF'
+        {
+          "Variables": {
             "NODE_ENV": "dev",
             "DATABASE_HOST": "${{ steps.rds_endpoint.outputs.rds_endpoint }}",
             "DATABASE_PORT": "3306",
@@ -68,7 +68,14 @@ jobs:
             "MIGRATE_DATABASE_URL": "mysql://admin:admin123@${{ steps.rds_endpoint.outputs.rds_endpoint }}:3306/fastfood?allowPublicKeyRetrieval=true",
             "PORT": "3000",
             "JWT_SECRET": "jwt_secret_key"
-          }' \
+          }
+        }
+        EOF
+        
+        # Atualizar a função Lambda usando o arquivo JSON
+        aws lambda update-function-configuration \
+          --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
+          --environment file://env_vars.json \
           --region ${{ env.AWS_REGION }}
 
         echo "✅ Variáveis de ambiente configuradas!"
