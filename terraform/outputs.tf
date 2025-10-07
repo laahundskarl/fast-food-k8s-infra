@@ -75,3 +75,36 @@ output "oidc_provider_arn" {
   description = "ARN do OIDC provider"
   value       = module.eks.oidc_provider_arn
 }
+
+# ===========================
+# LAMBDA OUTPUTS
+# ===========================
+
+output "lambda_auth_arn" {
+  description = "ARN da função Lambda de autenticação"
+  value       = aws_lambda_function.auth_lambda.arn
+}
+
+output "lambda_auth_function_name" {
+  description = "Nome da função Lambda de autenticação"
+  value       = aws_lambda_function.auth_lambda.function_name
+}
+
+# ===========================
+# API GATEWAY OUTPUTS
+# ===========================
+
+output "api_gateway_url" {
+  description = "URL do API Gateway"
+  value       = "${aws_api_gateway_deployment.fast_food_api_deployment.invoke_url}/auth"
+}
+
+output "api_gateway_rest_api_id" {
+  description = "ID da REST API do API Gateway"
+  value       = aws_api_gateway_rest_api.fast_food_api.id
+}
+
+output "api_gateway_execution_arn" {
+  description = "ARN de execução do API Gateway"
+  value       = aws_api_gateway_rest_api.fast_food_api.execution_arn
+}

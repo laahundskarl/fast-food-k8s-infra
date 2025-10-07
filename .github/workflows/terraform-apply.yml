@@ -56,12 +56,26 @@ jobs:
       run: |
         echo "cluster_name=$(terraform output -raw cluster_name)" >> $GITHUB_OUTPUT
 
+    - name: Deploy Lambda Function
+      if: success()
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          github.rest.actions.createWorkflowDispatch({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            workflow_id: 'deploy-lambda.yml',
+            ref: context.ref
+          })
+
     - name: Notify Success
       if: success()
       run: |
         echo "✅ Kubernetes infrastructure deployed successfully!"
         echo "ECR URI: ${{ steps.ecr_uri.outputs.ecr_uri }}"
         echo "Cluster: ${{ steps.cluster_name.outputs.cluster_name }}"
+        echo "🚀 Lambda deployment triggered automatically!"
 
     - name: Trigger Application Build
       if: success()
