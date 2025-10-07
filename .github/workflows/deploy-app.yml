@@ -45,8 +45,8 @@ jobs:
     - name: Get ECR URI from Terraform
       id: ecr_uri
       run: |
-        cd ../terraform
-        echo "ecr_uri=$(terraform output -raw ecr_repository_url)" >> $GITHUB_OUTPUT
+        cd terraform
+        echo "ecr_uri=$(terraform output -raw ecr_repository_url | tr -d '\n' | tr -d '\r')" >> $GITHUB_OUTPUT
 
     - name: Get RDS Endpoint
       id: rds_endpoint
@@ -95,18 +95,21 @@ jobs:
         export ECR_URI="${{ steps.ecr_uri.outputs.ecr_uri }}"
         export IMAGE_TAG="${{ steps.image_tag.outputs.image_tag }}"
         export RDS_ENDPOINT="${{ steps.rds_endpoint.outputs.rds_endpoint }}"
+        echo "Debug - ECR_URI: $ECR_URI"
+        echo "Debug - IMAGE_TAG: $IMAGE_TAG"
+        echo "Debug - RDS_ENDPOINT: $RDS_ENDPOINT"
         envsubst < 04-api-deployment.yaml | kubectl apply -f -
 
     - name: Wait for Application
       run: |
-        echo "🔍 Verificando status do deployment..."
+        echo "Verificando status do deployment..."
         kubectl get deployments
         kubectl get pods -l app=fastfood-api
         
-        echo "📋 Descrevendo deployment para diagnóstico..."
+        echo "Descrevendo deployment para diagnóstico..."
         kubectl describe deployment fastfood-api
         
-        echo "⏳ Aguardando rollout do deployment (timeout: 600s)..."
+        echo "Aguardando rollout do deployment (timeout: 600s)..."
         kubectl rollout status deployment/fastfood-api --timeout=600s
 
     - name: Run Database Migrations
