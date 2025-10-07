@@ -182,21 +182,21 @@ jobs:
         
         echo ""
         echo "🌐 Testando conectividade de rede:"
-        kubectl exec $API_POD -- bash -c "
+        kubectl exec $API_POD -- sh -c "
           echo '--- Testando ping para o RDS ---'
           ping -c 3 fastfood-db.czyqradinnne.us-east-1.rds.amazonaws.com || echo 'Ping falhou'
-          
-          echo ''
-          echo '--- Testando conectividade TCP na porta 3306 ---'
-          timeout 10 bash -c '</dev/tcp/fastfood-db.czyqradinnne.us-east-1.rds.amazonaws.com/3306' && echo 'Conectividade TCP OK' || echo 'Conectividade TCP falhou'
           
           echo ''
           echo '--- Testando nslookup ---'
           nslookup fastfood-db.czyqradinnne.us-east-1.rds.amazonaws.com || echo 'nslookup falhou'
           
           echo ''
-          echo '--- Verificando rotas de rede ---'
-          ip route || echo 'ip route falhou'
+          echo '--- Verificando se a porta 3306 está aberta ---'
+          nc -z -v fastfood-db.czyqradinnne.us-east-1.rds.amazonaws.com 3306 || echo 'netcat falhou'
+          
+          echo ''
+          echo '--- Testando telnet para a porta 3306 ---'
+          timeout 5 telnet fastfood-db.czyqradinnne.us-east-1.rds.amazonaws.com 3306 || echo 'telnet falhou'
         " || echo "Testes de conectividade falharam"
         
         echo ""
