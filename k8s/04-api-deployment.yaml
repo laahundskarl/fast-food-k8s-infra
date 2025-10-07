@@ -4,6 +4,11 @@ metadata:
   name: fastfood-api
 spec:
   replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0  # Manter pelo menos 1 pod ativo sempre
+      maxSurge: 1        # Permitir apenas 1 pod extra durante update
   selector:
     matchLabels:
       app: fastfood-api
@@ -41,11 +46,18 @@ spec:
           httpGet:
             path: /docs  # Swagger sempre funciona
             port: 3000
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60  # Aumentado para dar mais tempo para a app inicializar
           periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 5  # Mais tolerante a falhas temporárias
         livenessProbe:
           httpGet:
             path: /docs  # Swagger sempre funciona
             port: 3000
-          initialDelaySeconds: 60
+          initialDelaySeconds: 120  # Muito tempo para primeira verificação
+          periodSeconds: 30
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
           periodSeconds: 30

@@ -12,6 +12,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
+  TF_VERSION: "1.5.0"
 
 jobs:
   deploy:
@@ -42,11 +43,21 @@ jobs:
       run: |
         aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name fast-food-cluster-prd
 
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+        terraform_wrapper: false
+
+    - name: Terraform Init
+      working-directory: terraform
+      run: terraform init
+
     - name: Get ECR URI from Terraform
       id: ecr_uri
+      working-directory: terraform
       run: |
-        cd ../terraform
-        echo "ecr_uri=$(terraform output -raw ecr_repository_url)" >> $GITHUB_OUTPUT
+        echo "ecr_uri=$(terraform output -raw ecr_repository_url | tr -d '\n' | tr -d '\r')" >> $GITHUB_OUTPUT
 
     - name: Get RDS Endpoint
       id: rds_endpoint
@@ -59,7 +70,23 @@ jobs:
         if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
           echo "image_tag=${{ github.event.client_payload.image_tag }}" >> $GITHUB_OUTPUT
         else
-          echo "image_tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
+          echo "image_tag=${{ github.event.inputs.image_tag || 'latest' }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Check ECR Image Exists
+      run: |
+        ECR_URI="${{ steps.ecr_uri.outputs.ecr_uri }}"
+        IMAGE_TAG="${{ steps.image_tag.outputs.image_tag }}"
+        echo "Checking if image exists: $ECR_URI:$IMAGE_TAG"
+        
+        # Try to get image details
+        if aws ecr describe-images --repository-name fastfood-api --image-ids imageTag=$IMAGE_TAG --region ${{ env.AWS_REGION }} > /dev/null 2>&1; then
+          echo "✅ Image $ECR_URI:$IMAGE_TAG exists in ECR"
+        else
+          echo "❌ Image $ECR_URI:$IMAGE_TAG does NOT exist in ECR"
+          echo "Available images in repository:"
+          aws ecr describe-images --repository-name fastfood-api --region ${{ env.AWS_REGION }} --query 'imageDetails[*].imageTags' --output table || echo "No images found or repository doesn't exist"
+          exit 1
         fi
 
     - name: Deploy Services and LoadBalancer
@@ -85,28 +112,110 @@ jobs:
         fi
 
     - name: Deploy ConfigMap and Secrets
+      working-directory: k8s
       run: |
         export LOADBALANCER_URL="${{ steps.loadbalancer.outputs.loadbalancer_url }}"
         export RDS_ENDPOINT="${{ steps.rds_endpoint.outputs.rds_endpoint }}"
         envsubst < 03-config.yaml | kubectl apply -f -
 
     - name: Deploy Application
+      working-directory: k8s
       run: |
         export ECR_URI="${{ steps.ecr_uri.outputs.ecr_uri }}"
         export IMAGE_TAG="${{ steps.image_tag.outputs.image_tag }}"
         export RDS_ENDPOINT="${{ steps.rds_endpoint.outputs.rds_endpoint }}"
+        echo "Debug - ECR_URI: $ECR_URI"
+        echo "Debug - IMAGE_TAG: $IMAGE_TAG"
+        echo "Debug - RDS_ENDPOINT: $RDS_ENDPOINT"
         envsubst < 04-api-deployment.yaml | kubectl apply -f -
+
+    - name: Restart Pods for Security Group Updates
+      run: |
+        echo "🔄 Reiniciando pods para aplicar novas configurações de Security Group..."
+        kubectl rollout restart deployment/fastfood-api
+        echo "✅ Restart iniciado. Aguardando estabilização..."
 
     - name: Wait for Application
       run: |
-        kubectl rollout status deployment/fastfood-api --timeout=300s
+        echo "🔍 Verificando status inicial do deployment..."
+        kubectl get deployments
+        kubectl get pods -l app=fastfood-api
+        
+        echo ""
+        echo "📝 Descrevendo deployment para diagnóstico..."
+        kubectl describe deployment fastfood-api
+        
+        echo ""
+        echo "🔍 Verificando logs dos pods (se existirem)..."
+        for pod in $(kubectl get pods -l app=fastfood-api -o jsonpath='{.items[*].metadata.name}'); do
+          echo "--- Logs do pod $pod ---"
+          kubectl logs $pod --tail=50 || echo "Não foi possível obter logs do pod $pod"
+          echo ""
+          echo "--- Eventos do pod $pod ---"
+          kubectl describe pod $pod | grep -A 20 "Events:" || echo "Não foi possível obter eventos do pod $pod"
+          echo ""
+        done
+        
+        echo "⏳ Aguardando rollout do deployment (timeout: 300s)..."
+        if ! kubectl rollout status deployment/fastfood-api --timeout=300s; then
+          echo ""
+          echo "❌ Rollout falhou! Verificando status final..."
+          kubectl get pods -l app=fastfood-api
+          kubectl describe deployment fastfood-api
+          
+          echo ""
+          echo "📋 Logs finais dos pods:"
+          for pod in $(kubectl get pods -l app=fastfood-api -o jsonpath='{.items[*].metadata.name}'); do
+            echo "--- Logs finais do pod $pod ---"
+            kubectl logs $pod --tail=100 || echo "Não foi possível obter logs do pod $pod"
+          done
+          exit 1
+        fi
 
     - name: Run Database Migrations
       run: |
         API_POD=$(kubectl get pods -l app=fastfood-api -o jsonpath="{.items[0].metadata.name}")
+        
+        echo "🔍 Verificando configurações de rede AWS..."
+        echo "📋 Detalhes do RDS:"
+        aws rds describe-db-instances --db-instance-identifier fastfood-db --query 'DBInstances[0].{VpcId: DBSubnetGroup.VpcId, SubnetIds: DBSubnetGroup.Subnets[*].SubnetIdentifier, SecurityGroups: VpcSecurityGroups[*].VpcSecurityGroupId, AvailabilityZone: AvailabilityZone, Endpoint: Endpoint.Address}' --output table
+        
+        echo ""
+        echo "📋 Detalhes do EKS Cluster:"
+        aws eks describe-cluster --name fast-food-cluster-prd --query 'cluster.resourcesVpcConfig.{VpcId: vpcId, SubnetIds: subnetIds, SecurityGroupIds: securityGroupIds}' --output table
+        
+        echo ""
+        echo "📋 Security Groups do RDS:"
+        RDS_SG=$(aws rds describe-db-instances --db-instance-identifier fastfood-db --query 'DBInstances[0].VpcSecurityGroups[0].VpcSecurityGroupId' --output text)
+        echo "RDS Security Group: $RDS_SG"
+        aws ec2 describe-security-groups --group-ids $RDS_SG --query 'SecurityGroups[0].{GroupId: GroupId, IngressRules: IpPermissions[*]}' --output table
+        
+        echo ""
+        echo "🔍 Testando conectividade antes da migração..."
+        echo "📋 Informações do pod:"
+        kubectl describe pod $API_POD | grep -A 10 "IP:"
+        
+        echo ""
+        echo "🌐 Testando conectividade de rede:"
+        kubectl exec $API_POD -- sh -c "
+          echo '--- Testando ping para o RDS ---'
+          ping -c 3 fastfood-db.czyqradinnne.us-east-1.rds.amazonaws.com || echo 'Ping falhou'
+          
+          echo ''
+          echo '--- Testando nslookup ---'
+          nslookup fastfood-db.czyqradinnne.us-east-1.rds.amazonaws.com || echo 'nslookup falhou'
+          
+          echo ''
+          echo '--- Verificando se a porta 3306 está aberta ---'
+          nc -z -v fastfood-db.czyqradinnne.us-east-1.rds.amazonaws.com 3306 || echo 'netcat falhou'
+        " || echo "Testes de conectividade falharam"
+        
+        echo ""
+        echo "🗃️ Executando migração do banco..."
         kubectl exec $API_POD -- npx prisma migrate deploy
 
     - name: Deploy HPA
+      working-directory: k8s
       run: |
         kubectl apply -f 05-hpa.yaml
 
