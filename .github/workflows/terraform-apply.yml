@@ -16,6 +16,10 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+  actions: write
+
 env:
   TF_VERSION: '1.5.0'
 
@@ -56,12 +60,16 @@ jobs:
     - name: Get ECR URI
       id: ecr_uri
       run: |
-        echo "ecr_uri=$(terraform output -raw ecr_repository_url)" >> $GITHUB_OUTPUT
+        ECR_URI=$(terraform output -raw ecr_repository_url | tr -d '\n' | tr -d '\r')
+        echo "ecr_uri=${ECR_URI}" >> $GITHUB_OUTPUT
+        echo "ECR URI captured: ${ECR_URI}"
 
     - name: Get Cluster Name
       id: cluster_name
       run: |
-        echo "cluster_name=$(terraform output -raw cluster_name)" >> $GITHUB_OUTPUT
+        CLUSTER_NAME=$(terraform output -raw cluster_name | tr -d '\n' | tr -d '\r')
+        echo "cluster_name=${CLUSTER_NAME}" >> $GITHUB_OUTPUT
+        echo "Cluster Name captured: ${CLUSTER_NAME}"
 
     - name: Deploy Lambda Function
       if: success()
