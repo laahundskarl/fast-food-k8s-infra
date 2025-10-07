@@ -41,7 +41,7 @@ resource "aws_api_gateway_deployment" "fast_food_api_deployment" {
 resource "aws_lambda_permission" "api_gateway_lambda" {
   statement_id  = "AllowExecutionFromAPIGateway"
   action        = "lambda:InvokeFunction"
-  function_name = var.lambda_auth_arn
+  function_name = aws_lambda_function.auth_lambda.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.fast_food_api.execution_arn}/*/*"
 }
