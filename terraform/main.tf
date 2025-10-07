@@ -128,3 +128,163 @@ resource "aws_security_group_rule" "eks_mysql_egress" {
   security_group_id        = module.eks.node_security_group_id
   description              = "Allow EKS nodes to connect to RDS MySQL"
 }
+
+# ===========================
+# LAMBDA FUNCTION
+# ===========================
+
+# IAM Role para a Lambda
+resource "aws_iam_role" "lambda_auth_role" {
+  name = "lambda-auth-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# IAM Policy para logs básicos
+resource "aws_iam_role_policy_attachment" "lambda_auth_basic" {
+  role       = aws_iam_role.lambda_auth_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# IAM Policy para acessar RDS (se necessário)
+resource "aws_iam_role_policy" "lambda_rds_policy" {
+  name = "lambda-rds-policy"
+  role = aws_iam_role.lambda_auth_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "rds:DescribeDBInstances",
+          "rds:DescribeDBClusters"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Data source para obter informações do RDS
+data "aws_db_instance" "fastfood_db" {
+  db_instance_identifier = "fastfood-db"
+}
+
+# Arquivo ZIP com código placeholder
+data "archive_file" "lambda_placeholder" {
+  type        = "zip"
+  output_path = "${path.module}/lambda_placeholder.zip"
+  source {
+    content  = "exports.handler = async (event) => { return { statusCode: 200, body: 'Hello from Lambda!' }; };"
+    filename = "index.js"
+  }
+}
+
+# Função Lambda
+resource "aws_lambda_function" "auth_lambda" {
+  function_name = "fast-food-auth"
+  role         = aws_iam_role.lambda_auth_role.arn
+  handler      = "index.handler"
+  runtime      = "nodejs18.x"
+  timeout      = 10
+  filename     = data.archive_file.lambda_placeholder.output_path
+  source_code_hash = data.archive_file.lambda_placeholder.output_base64sha256
+
+  environment {
+    variables = {
+      NODE_ENV = "dev"
+      
+      # DATABASE - usando mesmas configurações do K8s
+      DATABASE_HOST      = data.aws_db_instance.fastfood_db.address
+      DATABASE_PORT      = "3306"
+      DATABASE_USER      = "admin"
+      DATABASE_PASS      = "admin123"
+      DATABASE_ROOT_PASS = "root123"
+      DATABASE_NAME      = "fastfood"
+      DATABASE_URL       = "mysql://admin:admin123@${data.aws_db_instance.fastfood_db.address}:3306/fastfood?allowPublicKeyRetrieval=true"
+      MIGRATE_DATABASE_URL = "mysql://admin:admin123@${data.aws_db_instance.fastfood_db.address}:3306/fastfood?allowPublicKeyRetrieval=true"
+      PORT = "3000"
+      
+      # JWT
+      JWT_SECRET = "jwt_secret_key"
+    }
+  }
+
+  depends_on = [aws_iam_role_policy_attachment.lambda_auth_basic]
+
+  tags = {
+    Environment = var.environment
+    Terraform   = "true"
+    Component   = "serverless"
+  }
+}
+
+# ===========================
+# API GATEWAY
+# ===========================
+
+# API Gateway REST API
+resource "aws_api_gateway_rest_api" "fast_food_api" {
+  name = "fast-food-api"
+
+  tags = {
+    Environment = var.environment
+    Terraform   = "true"
+    Component   = "api-gateway"
+  }
+}
+
+# API Gateway Resource for /auth
+resource "aws_api_gateway_resource" "auth_resource" {
+  rest_api_id = aws_api_gateway_rest_api.fast_food_api.id
+  parent_id   = aws_api_gateway_rest_api.fast_food_api.root_resource_id
+  path_part   = "auth"
+}
+
+# API Gateway Method POST /auth
+resource "aws_api_gateway_method" "auth_post" {
+  rest_api_id   = aws_api_gateway_rest_api.fast_food_api.id
+  resource_id   = aws_api_gateway_resource.auth_resource.id
+  http_method   = "POST"
+  authorization = "NONE"
+}
+
+# API Gateway Integration with Lambda
+resource "aws_api_gateway_integration" "auth_lambda_integration" {
+  rest_api_id = aws_api_gateway_rest_api.fast_food_api.id
+  resource_id = aws_api_gateway_resource.auth_resource.id
+  http_method = aws_api_gateway_method.auth_post.http_method
+
+  integration_http_method = "POST"
+  type                   = "AWS_PROXY"
+  uri                    = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${aws_lambda_function.auth_lambda.arn}/invocations"
+}
+
+# API Gateway Deployment
+resource "aws_api_gateway_deployment" "fast_food_api_deployment" {
+  depends_on = [aws_api_gateway_integration.auth_lambda_integration]
+
+  rest_api_id = aws_api_gateway_rest_api.fast_food_api.id
+  stage_name  = "prod"
+}
+
+# Lambda permission for API Gateway
+resource "aws_lambda_permission" "api_gateway_lambda" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.auth_lambda.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.fast_food_api.execution_arn}/*/*"
+}
