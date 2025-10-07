@@ -129,6 +129,12 @@ jobs:
         echo "Debug - RDS_ENDPOINT: $RDS_ENDPOINT"
         envsubst < 04-api-deployment.yaml | kubectl apply -f -
 
+    - name: Restart Pods for Security Group Updates
+      run: |
+        echo "🔄 Reiniciando pods para aplicar novas configurações de Security Group..."
+        kubectl rollout restart deployment/fastfood-api
+        echo "✅ Restart iniciado. Aguardando estabilização..."
+
     - name: Wait for Application
       run: |
         echo "🔍 Verificando status inicial do deployment..."
