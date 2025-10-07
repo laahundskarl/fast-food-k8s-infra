@@ -75,3 +75,9 @@ output "oidc_provider_arn" {
   description = "ARN do OIDC provider"
   value       = module.eks.oidc_provider_arn
 }
+
+# Lambda Output
+output "lambda_auth_arn" {
+  description = "ARN da função Lambda de autenticação"
+  value       = aws_lambda_function.auth_lambda.arn
+}
