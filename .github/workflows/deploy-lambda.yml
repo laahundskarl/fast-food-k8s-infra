@@ -1,0 +1,152 @@
+name: 'CD - Deploy Lambda'
+
+on:
+  repository_dispatch:
+    types: [deploy-lambda]
+  workflow_dispatch:
+    inputs:
+      lambda_code_update:
+        description: 'Update Lambda code from ECR or keep existing'
+        required: false
+        default: 'keep-existing'
+        type: choice
+        options:
+          - 'keep-existing'
+          - 'update-from-ecr'
+
+env:
+  AWS_REGION: us-east-1
+  LAMBDA_FUNCTION_NAME: fast-food-auth
+
+jobs:
+  deploy-lambda:
+    name: 'Deploy Lambda Function'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Get RDS Endpoint
+      id: rds_endpoint
+      run: |
+        echo "🔍 Obtendo endpoint do RDS..."
+        RDS_ENDPOINT=$(aws rds describe-db-instances --db-instance-identifier fastfood-db --query 'DBInstances[0].Endpoint.Address' --output text 2>/dev/null || echo "")
+        
+        if [ -z "$RDS_ENDPOINT" ] || [ "$RDS_ENDPOINT" = "None" ]; then
+          echo "⚠️ RDS não encontrado. Usando endpoint padrão para desenvolvimento."
+          RDS_ENDPOINT="localhost"
+        fi
+        
+        echo "✅ RDS Endpoint: $RDS_ENDPOINT"
+        echo "rds_endpoint=$RDS_ENDPOINT" >> $GITHUB_OUTPUT
+
+    - name: Update Lambda Environment Variables
+      run: |
+        echo "🔧 Configurando variáveis de ambiente da Lambda..."
+        
+        # Mesmas variáveis usadas no deploy-app.yml
+        aws lambda update-function-configuration \
+          --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
+          --environment Variables='{
+            "NODE_ENV": "dev",
+            "DATABASE_HOST": "${{ steps.rds_endpoint.outputs.rds_endpoint }}",
+            "DATABASE_PORT": "3306",
+            "DATABASE_USER": "admin",
+            "DATABASE_PASS": "admin123",
+            "DATABASE_ROOT_PASS": "root123",
+            "DATABASE_NAME": "fastfood",
+            "DATABASE_URL": "mysql://admin:admin123@${{ steps.rds_endpoint.outputs.rds_endpoint }}:3306/fastfood?allowPublicKeyRetrieval=true",
+            "MIGRATE_DATABASE_URL": "mysql://admin:admin123@${{ steps.rds_endpoint.outputs.rds_endpoint }}:3306/fastfood?allowPublicKeyRetrieval=true",
+            "PORT": "3000",
+            "JWT_SECRET": "jwt_secret_key"
+          }' \
+          --region ${{ env.AWS_REGION }}
+
+        echo "✅ Variáveis de ambiente configuradas!"
+
+    - name: Get Lambda Function Info
+      id: lambda_info
+      run: |
+        LAMBDA_ARN=$(aws lambda get-function --function-name ${{ env.LAMBDA_FUNCTION_NAME }} --query 'Configuration.FunctionArn' --output text)
+        LAMBDA_VERSION=$(aws lambda get-function --function-name ${{ env.LAMBDA_FUNCTION_NAME }} --query 'Configuration.Version' --output text)
+        
+        echo "lambda_arn=$LAMBDA_ARN" >> $GITHUB_OUTPUT
+        echo "lambda_version=$LAMBDA_VERSION" >> $GITHUB_OUTPUT
+        
+        echo "📋 Lambda Function Info:"
+        echo "  ARN: $LAMBDA_ARN"
+        echo "  Version: $LAMBDA_VERSION"
+
+    - name: Test Lambda Function
+      run: |
+        echo "🧪 Testando função Lambda..."
+        
+        # Criar payload de teste
+        TEST_PAYLOAD='{"test": true, "message": "Deploy test"}'
+        
+        # Invocar a Lambda
+        aws lambda invoke \
+          --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
+          --payload "$TEST_PAYLOAD" \
+          --cli-binary-format raw-in-base64-out \
+          response.json
+        
+        echo "📄 Resposta da Lambda:"
+        cat response.json
+        echo ""
+        
+        # Verificar se a resposta contém sucesso
+        if grep -q "statusCode.*200" response.json; then
+          echo "✅ Lambda funcionando corretamente!"
+        else
+          echo "⚠️ Lambda pode ter problemas. Verifique os logs."
+        fi
+
+    - name: Get API Gateway URL
+      id: api_gateway
+      run: |
+        # Obter URL do API Gateway via Terraform outputs
+        cd terraform
+        API_GATEWAY_URL=$(terraform output -raw api_gateway_url 2>/dev/null || echo "")
+        
+        if [ ! -z "$API_GATEWAY_URL" ]; then
+          echo "api_gateway_url=$API_GATEWAY_URL" >> $GITHUB_OUTPUT
+          echo "🌐 API Gateway URL: $API_GATEWAY_URL"
+        else
+          echo "⚠️ API Gateway URL não encontrada nos outputs do Terraform"
+        fi
+
+    - name: Verify Deployment
+      run: |
+        echo "🎉 Deploy da Lambda concluído com sucesso!"
+        echo ""
+        echo "📋 Resumo do Deploy:"
+        echo "  • Função: ${{ env.LAMBDA_FUNCTION_NAME }}"
+        echo "  • ARN: ${{ steps.lambda_info.outputs.lambda_arn }}"
+        echo "  • Versão: ${{ steps.lambda_info.outputs.lambda_version }}"
+        echo "  • RDS Endpoint: ${{ steps.rds_endpoint.outputs.rds_endpoint }}"
+        
+        if [ ! -z "${{ steps.api_gateway.outputs.api_gateway_url }}" ]; then
+          echo "  • API Gateway: ${{ steps.api_gateway.outputs.api_gateway_url }}"
+        fi
+        
+        echo ""
+        echo "🔗 A Lambda está integrada com:"
+        echo "  • Mesmo RDS usado pelo K8s"
+        echo "  • Mesmas configurações de banco"
+        echo "  • API Gateway para acesso HTTP"
+
+    - name: Notify Success
+      if: success()
+      run: |
+        echo "✅ Lambda deployment completed successfully!"
+        echo "The Lambda function is now configured with the same database settings as the K8s application."

@@ -177,11 +177,6 @@ resource "aws_iam_role_policy" "lambda_rds_policy" {
   })
 }
 
-# Data source para obter informações do RDS
-data "aws_db_instance" "fastfood_db" {
-  db_instance_identifier = "fastfood-db"
-}
-
 # Arquivo ZIP com código placeholder
 data "archive_file" "lambda_placeholder" {
   type        = "zip"
@@ -192,7 +187,7 @@ data "archive_file" "lambda_placeholder" {
   }
 }
 
-# Função Lambda
+# Função Lambda (variáveis de ambiente serão configuradas via workflow)
 resource "aws_lambda_function" "auth_lambda" {
   function_name = "fast-food-auth"
   role         = aws_iam_role.lambda_auth_role.arn
@@ -202,23 +197,10 @@ resource "aws_lambda_function" "auth_lambda" {
   filename     = data.archive_file.lambda_placeholder.output_path
   source_code_hash = data.archive_file.lambda_placeholder.output_base64sha256
 
+  # Variáveis mínimas - serão sobrescritas pelo workflow deploy-lambda.yml
   environment {
     variables = {
-      NODE_ENV = "dev"
-      
-      # DATABASE - usando mesmas configurações do K8s
-      DATABASE_HOST      = data.aws_db_instance.fastfood_db.address
-      DATABASE_PORT      = "3306"
-      DATABASE_USER      = "admin"
-      DATABASE_PASS      = "admin123"
-      DATABASE_ROOT_PASS = "root123"
-      DATABASE_NAME      = "fastfood"
-      DATABASE_URL       = "mysql://admin:admin123@${data.aws_db_instance.fastfood_db.address}:3306/fastfood?allowPublicKeyRetrieval=true"
-      MIGRATE_DATABASE_URL = "mysql://admin:admin123@${data.aws_db_instance.fastfood_db.address}:3306/fastfood?allowPublicKeyRetrieval=true"
-      PORT = "3000"
-      
-      # JWT
-      JWT_SECRET = "jwt_secret_key"
+      PLACEHOLDER = "configured-by-workflow"
     }
   }
 
