@@ -15,6 +15,8 @@ on:
           - 'k8s-first'
           - 'force-destroy'
         default: 'k8s-first'
+  repository_dispatch:
+    types: [app-triggered-destroy]
 
 env:
   TF_VERSION: '1.5.0'
@@ -29,12 +31,23 @@ jobs:
     - name: Validate confirmation
       id: check
       run: |
-        if [ "${{ github.event.inputs.confirm_destroy }}" = "DESTROY" ]; then
+        # Check if triggered by workflow_dispatch (manual)
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event.inputs.confirm_destroy }}" = "DESTROY" ]; then
+            echo "should_destroy=true" >> $GITHUB_OUTPUT
+            echo "✅ Manual destruction confirmed"
+          else
+            echo "should_destroy=false" >> $GITHUB_OUTPUT
+            echo "❌ Invalid confirmation. Type exactly: DESTROY"
+            exit 1
+          fi
+        # Check if triggered by repository_dispatch (automatic from app)
+        elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
           echo "should_destroy=true" >> $GITHUB_OUTPUT
-          echo "✅ Destruction confirmed"
+          echo "✅ Automatic destruction triggered by fast-food app"
         else
           echo "should_destroy=false" >> $GITHUB_OUTPUT
-          echo "❌ Invalid confirmation. Type exactly: DESTROY"
+          echo "❌ Invalid trigger"
           exit 1
         fi
 
