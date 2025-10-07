@@ -41,6 +41,11 @@ data "aws_iam_role" "eks_node_role" {
   name = "LabRole"
 }
 
+# IAM Role existente para Lambda (mesmo LabRole usado pelo EKS)
+data "aws_iam_role" "lambda_role" {
+  name = "LabRole"
+}
+
 # ===========================
 # EKS CLUSTER
 # ===========================
@@ -133,50 +138,6 @@ resource "aws_security_group_rule" "eks_mysql_egress" {
 # LAMBDA FUNCTION
 # ===========================
 
-# IAM Role para a Lambda
-resource "aws_iam_role" "lambda_auth_role" {
-  name = "lambda-auth-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "lambda.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-# IAM Policy para logs básicos
-resource "aws_iam_role_policy_attachment" "lambda_auth_basic" {
-  role       = aws_iam_role.lambda_auth_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-}
-
-# IAM Policy para acessar RDS (se necessário)
-resource "aws_iam_role_policy" "lambda_rds_policy" {
-  name = "lambda-rds-policy"
-  role = aws_iam_role.lambda_auth_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "rds:DescribeDBInstances",
-          "rds:DescribeDBClusters"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
 # Arquivo ZIP com código placeholder
 data "archive_file" "lambda_placeholder" {
   type        = "zip"
@@ -187,10 +148,10 @@ data "archive_file" "lambda_placeholder" {
   }
 }
 
-# Função Lambda (variáveis de ambiente serão configuradas via workflow)
+# Função Lambda (usando LabRole existente)
 resource "aws_lambda_function" "auth_lambda" {
   function_name = "fast-food-auth"
-  role         = aws_iam_role.lambda_auth_role.arn
+  role         = data.aws_iam_role.lambda_role.arn
   handler      = "index.handler"
   runtime      = "nodejs18.x"
   timeout      = 10
@@ -203,8 +164,6 @@ resource "aws_lambda_function" "auth_lambda" {
       PLACEHOLDER = "configured-by-workflow"
     }
   }
-
-  depends_on = [aws_iam_role_policy_attachment.lambda_auth_basic]
 
   tags = {
     Environment = var.environment
