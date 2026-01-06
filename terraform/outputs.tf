@@ -77,20 +77,6 @@ output "oidc_provider_arn" {
 }
 
 # ===========================
-# LAMBDA OUTPUTS
-# ===========================
-
-output "lambda_auth_arn" {
-  description = "ARN da função Lambda de autenticação"
-  value       = aws_lambda_function.auth_lambda.arn
-}
-
-output "lambda_auth_function_name" {
-  description = "Nome da função Lambda de autenticação"
-  value       = aws_lambda_function.auth_lambda.function_name
-}
-
-# ===========================
 # API GATEWAY OUTPUTS
 # ===========================
 

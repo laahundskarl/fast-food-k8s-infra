@@ -135,44 +135,6 @@ resource "aws_security_group_rule" "eks_mysql_egress" {
 }
 
 # ===========================
-# LAMBDA FUNCTION
-# ===========================
-
-# Arquivo ZIP com código placeholder
-data "archive_file" "lambda_placeholder" {
-  type        = "zip"
-  output_path = "${path.module}/lambda_placeholder.zip"
-  source {
-    content  = "exports.handler = async (event) => { return { statusCode: 200, body: 'Hello from Lambda!' }; };"
-    filename = "index.js"
-  }
-}
-
-# Função Lambda (usando LabRole existente)
-resource "aws_lambda_function" "auth_lambda" {
-  function_name = "fast-food-auth"
-  role         = data.aws_iam_role.lambda_role.arn
-  handler      = "index.handler"
-  runtime      = "nodejs18.x"
-  timeout      = 10
-  filename     = data.archive_file.lambda_placeholder.output_path
-  source_code_hash = data.archive_file.lambda_placeholder.output_base64sha256
-
-  # Variáveis mínimas - serão sobrescritas pelo workflow deploy-lambda.yml
-  environment {
-    variables = {
-      PLACEHOLDER = "configured-by-workflow"
-    }
-  }
-
-  tags = {
-    Environment = var.environment
-    Terraform   = "true"
-    Component   = "serverless"
-  }
-}
-
-# ===========================
 # API GATEWAY
 # ===========================
 
