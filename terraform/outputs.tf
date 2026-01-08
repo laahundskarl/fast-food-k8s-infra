@@ -34,16 +34,6 @@ output "cluster_version" {
   value       = module.eks.cluster_version
 }
 
-output "cluster_security_group_id" {
-  description = "ID do security group do cluster"
-  value       = module.eks.cluster_security_group_id
-}
-
-output "node_security_group_id" {
-  description = "Security Group ID dos nodes EKS"
-  value       = module.eks.node_security_group_id
-}
-
 output "cluster_arn" {
   description = "ARN do cluster EKS"
   value       = module.eks.cluster_arn
@@ -74,4 +64,10 @@ output "node_groups" {
 output "oidc_provider_arn" {
   description = "ARN do OIDC provider"
   value       = module.eks.oidc_provider_arn
+}
+
+# Security Group Integration
+output "eks_nodes_security_group_from_db_infra" {
+  description = "Security Group ID dos nodes EKS (importado do db-infra)"
+  value       = data.aws_security_group.eks_nodes.id
 }

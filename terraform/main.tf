@@ -46,6 +46,18 @@ data "aws_iam_role" "lambda_role" {
   name = "LabRole"
 }
 
+# Data source para buscar o security group dos nodes EKS criado no db-infra
+data "aws_security_group" "eks_nodes" {
+  filter {
+    name   = "tag:Name"
+    values = ["fastfood-eks-nodes-security-group"]
+  }
+  filter {
+    name   = "tag:Component"
+    values = ["kubernetes"]
+  }
+}
+
 # ===========================
 # EKS CLUSTER
 # ===========================
@@ -93,6 +105,11 @@ module "eks" {
       # Use existing IAM role
       create_iam_role = false
       iam_role_arn    = data.aws_iam_role.eks_node_role.arn
+
+      # Adicionar o security group do db-infra aos nodes
+      vpc_security_group_ids = [
+        data.aws_security_group.eks_nodes.id
+      ]
     }
   }
 
@@ -119,17 +136,3 @@ resource "aws_ecr_repository" "fastfood_api" {
   }
 }
 
-# ===========================
-# SECURITY GROUP RULES
-# ===========================
-
-# Security Group rule para permitir saída dos nodes EKS para RDS MySQL
-resource "aws_security_group_rule" "eks_mysql_egress" {
-  type                     = "egress"
-  from_port                = 3306
-  to_port                  = 3306
-  protocol                 = "tcp"
-  source_security_group_id = module.eks.node_security_group_id
-  security_group_id        = module.eks.node_security_group_id
-  description              = "Allow EKS nodes to connect to RDS MySQL"
-}
