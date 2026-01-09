@@ -1,253 +1,336 @@
-# FastFood K8s Infrastructure - Infraestrutura Kubernetes
+# FastFood Kubernetes Infrastructure
 
-![Terraform](https://img.shields.io/badge/Terraform-1.0+-623CE4)
-![Kubernetes](https://img.shields.io/badge/Kubernetes-1.28+-326CE5)
+![Terraform](https://img.shields.io/badge/Terraform-1.5.0-7B42BC)
 ![AWS EKS](https://img.shields.io/badge/AWS-EKS-FF9900)
-![AWS ECR](https://img.shields.io/badge/AWS-ECR-FF9900)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-1.28-326CE5)
+![Docker](https://img.shields.io/badge/Docker-ECR-2496ED)
 
-## 📋 Sobre o Repositório
+## 📋 Sobre
 
-Repositório de infraestrutura como código (IaC) responsável pelo provisionamento e gerenciamento de toda a infraestrutura Kubernetes do sistema FastFood na AWS, incluindo cluster EKS, registry ECR e recursos de orquestração.
+Este repositório contém a infraestrutura Kubernetes (EKS) para o projeto FastFood, responsável por orquestrar a aplicação principal `fast-food` que roda em containers. Implementa cluster EKS gerenciado pela AWS com integração ao ECR para armazenamento de imagens Docker.
 
-## 🎯 Responsabilidades
+## 🎯 Arquitetura Kubernetes
 
-### Provisionamento de Cluster
-- **Amazon EKS**: Cluster Kubernetes gerenciado
-- **Node Groups**: Grupos de nós EC2 para workloads
-- **Amazon ECR**: Registry privado de imagens Docker
-- **VPC e Networking**: Configuração de rede para o cluster
-
-### Recursos Kubernetes
-- **Deployments**: Manifestos de deployment das aplicações
-- **Services**: Exposição de serviços (LoadBalancer, ClusterIP)
-- **ConfigMaps**: Configurações de aplicação
-- **Secrets**: Credenciais e dados sensíveis
-- **HPA**: Horizontal Pod Autoscaler para escalabilidade
-- **Metrics Server**: Coleta de métricas para HPA
-
-### Gerenciamento
-- **Auto-scaling**: Escalabilidade horizontal automática
-- **Load Balancing**: Distribuição de tráfego
-- **High Availability**: Múltiplas réplicas e zonas
-- **Monitoring**: Integração com CloudWatch
-
-## 🏗️ Arquitetura
-
-### Estrutura do Repositório
+### Componentes Principais
 
 ```
-terraform/
-├── main.tf              → Recursos principais (EKS, ECR)
-├── outputs.tf           → Outputs dos recursos criados
-├── providers.tf         → Configuração de providers AWS
-├── variables.tf         → Variáveis de configuração
-└── terraform.tfvars.example → Exemplo de variáveis
-
-k8s/
-├── deployment.yaml      → Deployment da aplicação
-├── service.yaml         → Service LoadBalancer
-├── configmap.yaml       → ConfigMaps
-├── secrets.yaml         → Secrets (template)
-├── hpa.yaml             → Horizontal Pod Autoscaler
-└── metrics-server.yaml  → Metrics Server
+┌─────────────────────────────────────────────────┐
+│              Application Load Balancer           │
+│                  (AWS ALB)                       │
+└────────────────────┬────────────────────────────┘
+                     │
+         ┌───────────▼──────────┐
+         │   Ingress Controller  │
+         │   (AWS ALB Ingress)   │
+         └───────────┬───────────┘
+                     │
+    ┌────────────────┼────────────────┐
+    │                │                │
+┌───▼────┐      ┌───▼────┐      ┌───▼────┐
+│ Pod 1  │      │ Pod 2  │      │ Pod 3  │
+│fast-   │      │fast-   │      │fast-   │
+│food    │      │food    │      │food    │
+└────────┘      └────────┘      └────────┘
+    │                │                │
+    └────────────────┼────────────────┘
+                     │
+         ┌───────────▼──────────┐
+         │   MySQL RDS (main)   │
+         │   fastfood_main      │
+         └──────────────────────┘
 ```
 
-### Diagrama de Infraestrutura
+## 🏗️ Recursos Provisionados
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         AWS Cloud                            │
-│                                                              │
-│  ┌────────────────────────────────────────────────────┐    │
-│  │              Amazon EKS Cluster                     │    │
-│  │                                                     │    │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────┐│    │
-│  │  │  Node Group  │  │  Node Group  │  │  Node    ││    │
-│  │  │  us-east-1a  │  │  us-east-1b  │  │  Group   ││    │
-│  │  └──────┬───────┘  └──────┬───────┘  └────┬─────┘│    │
-│  │         │                 │                │      │    │
-│  │  ┌──────▼─────────────────▼────────────────▼────┐ │    │
-│  │  │           FastFood Pods (2+ replicas)        │ │    │
-│  │  │  ┌────────┐  ┌────────┐  ┌────────┐         │ │    │
-│  │  │  │ Pod 1  │  │ Pod 2  │  │ Pod N  │         │ │    │
-│  │  │  └────────┘  └────────┘  └────────┘         │ │    │
-│  │  └───────────────────┬──────────────────────────┘ │    │
-│  │                      │                            │    │
-│  │  ┌───────────────────▼──────────────────────────┐ │    │
-│  │  │         LoadBalancer Service                 │ │    │
-│  │  └───────────────────┬──────────────────────────┘ │    │
-│  └────────────────────────┼──────────────────────────┘    │
-│                           │                               │
-│  ┌────────────────────────▼──────────────────────────┐   │
-│  │          Application Load Balancer (ELB)          │   │
-│  └────────────────────────┬──────────────────────────┘   │
-│                           │                               │
-│  ┌────────────────────────▼──────────────────────────┐   │
-│  │          Amazon ECR (Container Registry)          │   │
-│  │         fastfood-api:latest                       │   │
-│  └───────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
+### Amazon EKS (Elastic Kubernetes Service)
 
-## 🛠️ Stack Tecnológica
+#### Cluster Configuration
+- **Kubernetes Version**: 1.28
+- **Node Group**: Managed Node Group
+- **Instance Type**: t3.medium (2 vCPU, 4GB RAM)
+- **Scaling**:
+  - Min: 2 nodes
+  - Max: 4 nodes
+  - Desired: 2 nodes
+- **Networking**: VPC privada com subnets públicas e privadas
 
-### Infrastructure as Code
-- **Terraform**: >= 1.0
-- **AWS Provider**: ~> 5.0
-- **Kubernetes Provider**: ~> 2.0
+#### Add-ons Instalados
+- **VPC CNI**: Networking plugin
+- **CoreDNS**: DNS interno do cluster
+- **kube-proxy**: Network proxy
+- **AWS Load Balancer Controller**: Integração com ALB/NLB
 
-### AWS Services
-- **Amazon EKS**: Kubernetes gerenciado
-  - Version: 1.28+
-  - Node Type: t3.medium (configurável)
-  - Min Nodes: 2
-  - Max Nodes: 4
+### Amazon ECR (Elastic Container Registry)
 
-- **Amazon ECR**: Container Registry
-  - Image Scanning: Habilitado
-  - Lifecycle Policies: Configurado
+#### Repositórios
+- **fast-food**: Imagens da aplicação principal
+- **Lifecycle Policy**: Mantém últimas 10 imagens, remove antigas
+- **Scan on Push**: Scan de vulnerabilidades automático
+- **Encryption**: AES-256
 
-- **Elastic Load Balancer**: Distribuição de tráfego
-- **CloudWatch**: Logs e métricas
-- **IAM**: Roles e políticas
-
-### Kubernetes Resources
-- **Deployments**: Gerenciamento de pods
-- **Services**: LoadBalancer para acesso externo
-- **HPA**: Auto-scaling baseado em CPU/memória
-- **Metrics Server**: Coleta de métricas
-- **ConfigMaps/Secrets**: Configurações
-
-## 🚀 Como Usar
-
-### Pré-requisitos
-- Terraform >= 1.0 instalado
-- AWS CLI configurado com credenciais válidas
-- kubectl instalado
-- Permissões IAM necessárias:
-  - `AmazonEKSClusterPolicy`
-  - `AmazonEKSWorkerNodePolicy`
-  - `AmazonEC2ContainerRegistryFullAccess`
-  - `AmazonVPCFullAccess`
-
-### Provisionamento da Infraestrutura
-
-```bash
-# 1. Clonar repositório
-git clone https://github.com/fiap-software-architecture-tech/fast-food-k8s-infra.git
-cd fast-food-k8s-infra/terraform
-
-# 2. Copiar e configurar variáveis
-cp terraform.tfvars.example terraform.tfvars
-# Editar terraform.tfvars com suas configurações
-
-# 3. Inicializar Terraform
-terraform init
-
-# 4. Validar configuração
-terraform validate
-
-# 5. Planejar mudanças
-terraform plan
-
-# 6. Aplicar infraestrutura
-terraform apply
-```
-
-### Configurar kubectl
-
-```bash
-# Atualizar kubeconfig para o cluster EKS
-aws eks update-kubeconfig --region us-east-1 --name fast-food-cluster-prd
-
-# Verificar conexão
-kubectl get nodes
-```
-
-### Deploy da Aplicação
-
-```bash
-cd ../k8s
-
-# 1. Aplicar ConfigMaps
-kubectl apply -f configmap.yaml
-
-# 2. Aplicar Secrets (após configurar)
-kubectl apply -f secrets.yaml
-
-# 3. Deploy da aplicação
-kubectl apply -f deployment.yaml
-
-# 4. Expor serviço
-kubectl apply -f service.yaml
-
-# 5. Configurar HPA
-kubectl apply -f hpa.yaml
-
-# 6. Deploy Metrics Server (se necessário)
-kubectl apply -f metrics-server.yaml
-```
-
-### Verificar Deploy
-
-```bash
-# Ver pods
-kubectl get pods
-
-# Ver serviços
-kubectl get svc
-
-# Obter URL do LoadBalancer
-kubectl get svc fastfood-loadbalancer
-
-# Ver HPA
-kubectl get hpa
-
-# Ver métricas
-kubectl top pods
-kubectl top nodes
-```
-
-## 📊 Recursos Kubernetes
+## 📦 Manifests Kubernetes
 
 ### Deployment
-
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: fastfood-api
+  name: fast-food
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: fastfood-api
+      app: fast-food
   template:
     spec:
       containers:
-      - name: fastfood-api
-        image: <ECR_URI>:latest
-        resources:
-          requests:
-            cpu: 100m
-            memory: 128Mi
-          limits:
-            cpu: 500m
-            memory: 512Mi
+      - name: fast-food
+        image: <account>.dkr.ecr.us-east-1.amazonaws.com/fast-food:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: db-credentials
+              key: url
 ```
 
-### HPA (Horizontal Pod Autoscaler)
+### Service
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: fast-food-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: fast-food
+  ports:
+  - port: 80
+    targetPort: 3000
+```
 
+### Ingress (ALB)
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fast-food-ingress
+  annotations:
+    kubernetes.io/ingress.class: alb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: fast-food-service
+            port:
+              number: 80
+```
+
+## 🏗️ Estrutura do Repositório
+
+```
+fast-food-k8s-infra/
+├── terraform/
+│   ├── providers.tf           → Configuração AWS
+│   ├── variables.tf           → Variáveis de configuração
+│   ├── vpc.tf                 → VPC e Networking
+│   ├── eks-cluster.tf         → Cluster EKS
+│   ├── eks-node-group.tf      → Node Group
+│   ├── ecr.tf                 → Container Registry
+│   ├── iam-roles.tf           → IAM Roles e Policies
+│   └── outputs.tf             → Outputs (kubeconfig, etc)
+├── k8s/
+│   ├── deployment.yaml        → Deployment da aplicação
+│   ├── service.yaml           → Service (LoadBalancer)
+│   ├── ingress.yaml           → Ingress (ALB)
+│   ├── configmap.yaml         → ConfigMaps
+│   └── secrets.yaml           → Secrets (template)
+└── .github/workflows/
+    └── terraform-deploy.yml   → CI/CD Terraform
+```
+
+## 🔒 Segurança
+
+### Network Security
+- **Private Subnets**: Nodes em subnets privadas
+- **Security Groups**: Regras restritivas
+- **Network Policies**: Isolamento de pods
+- **VPC Flow Logs**: Auditoria de tráfego
+
+### IAM & RBAC
+- **IAM Roles for Service Accounts (IRSA)**: Permissões granulares
+- **RBAC**: Role-Based Access Control
+- **Pod Security Standards**: Enforced
+- **Secrets Encryption**: KMS encryption at rest
+
+### Container Security
+- **ECR Image Scanning**: Vulnerabilidades detectadas
+- **Non-root Containers**: Containers não rodam como root
+- **Read-only Root Filesystem**: Filesystem imutável
+- **Resource Limits**: CPU e Memory limits definidos
+
+## 🚀 Deploy
+
+### Pré-requisitos
+- Terraform 1.5.0+
+- AWS CLI configurado
+- kubectl instalado
+- Credenciais AWS com permissões para EKS e ECR
+
+### 1. Provisionar Infraestrutura
+
+```bash
+# Inicializar Terraform
+cd terraform
+terraform init
+
+# Validar configuração
+terraform validate
+
+# Planejar mudanças
+terraform plan
+
+# Aplicar infraestrutura
+terraform apply
+
+# Configurar kubectl
+aws eks update-kubeconfig --name fastfood-cluster --region us-east-1
+```
+
+### 2. Deploy da Aplicação
+
+```bash
+# Aplicar manifests Kubernetes
+cd ../k8s
+kubectl apply -f configmap.yaml
+kubectl apply -f secrets.yaml
+kubectl apply -f deployment.yaml
+kubectl apply -f service.yaml
+kubectl apply -f ingress.yaml
+
+# Verificar status
+kubectl get pods
+kubectl get svc
+kubectl get ingress
+```
+
+### 3. Build e Push de Imagem
+
+```bash
+# Login no ECR
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <account>.dkr.ecr.us-east-1.amazonaws.com
+
+# Build da imagem
+docker build -t fast-food:latest .
+
+# Tag da imagem
+docker tag fast-food:latest <account>.dkr.ecr.us-east-1.amazonaws.com/fast-food:latest
+
+# Push para ECR
+docker push <account>.dkr.ecr.us-east-1.amazonaws.com/fast-food:latest
+
+# Atualizar deployment
+kubectl rollout restart deployment/fast-food
+```
+
+## 🔄 CI/CD
+
+Este repositório possui workflow automatizado de CI/CD via GitHub Actions:
+
+### Workflow: `terraform-deploy.yml`
+- **Trigger**: Merge para `modulo_4`
+- **Jobs**:
+  - Validação Terraform
+  - Plan (preview de mudanças)
+  - Apply (deploy automático de infraestrutura)
+  - Update kubeconfig
+  - Deploy manifests Kubernetes
+
+### Workflow: `deploy-app.yml` (no repo fast-food)
+- **Trigger**: Merge para `modulo_4`
+- **Jobs**:
+  - Build Docker image
+  - Push para ECR
+  - Update Kubernetes deployment
+  - Rollout restart
+
+## 📊 Monitoramento
+
+### CloudWatch Container Insights
+- **Métricas de Cluster**:
+  - CPU e Memory utilization
+  - Network I/O
+  - Pod count
+  - Node status
+
+- **Métricas de Aplicação**:
+  - Request rate
+  - Error rate
+  - Response time
+  - Container restarts
+
+### Logs
+- **Application Logs**: CloudWatch Logs via Fluent Bit
+- **Cluster Logs**: Control plane logs
+- **Audit Logs**: Kubernetes API audit
+
+## 🔧 Troubleshooting
+
+### Verificar Status do Cluster
+```bash
+kubectl cluster-info
+kubectl get nodes
+kubectl get pods --all-namespaces
+```
+
+### Logs de Pods
+```bash
+kubectl logs -f deployment/fast-food
+kubectl describe pod <pod-name>
+```
+
+### Eventos do Cluster
+```bash
+kubectl get events --sort-by=.metadata.creationTimestamp
+```
+
+### Conectar ao Pod
+```bash
+kubectl exec -it <pod-name> -- /bin/sh
+```
+
+## 🔗 Integração com Outros Serviços
+
+### Conexão com RDS
+- Pods se conectam ao RDS via endpoint privado
+- Credenciais armazenadas em Kubernetes Secrets
+- Connection pooling configurado
+
+### Comunicação com Lambdas
+- Lambdas são chamados via API Gateway
+- Autenticação via JWT tokens
+- Retry logic implementado
+
+## 📈 Escalabilidade
+
+### Horizontal Pod Autoscaler (HPA)
 ```yaml
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: fastfood-api-hpa
+  name: fast-food-hpa
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: fastfood-api
+    name: fast-food
   minReplicas: 2
   maxReplicas: 10
   metrics:
@@ -259,118 +342,10 @@ spec:
         averageUtilization: 70
 ```
 
-## 🔒 Segurança
-
-### Boas Práticas Implementadas
-- ✅ **Private Subnets**: Nodes em subnets privadas
-- ✅ **Security Groups**: Acesso restrito ao cluster
-- ✅ **IAM Roles**: Permissões granulares para nodes
-- ✅ **ECR Scanning**: Scan automático de vulnerabilidades
-- ✅ **Secrets Management**: Kubernetes Secrets para dados sensíveis
-- ✅ **Network Policies**: Isolamento de rede (configurável)
-- ✅ **RBAC**: Controle de acesso baseado em roles
-
-### Recomendações
-- Use **AWS Secrets Manager** para secrets sensíveis
-- Configure **Pod Security Policies**
-- Habilite **Audit Logging**
-- Implemente **Network Policies**
-- Use **Private ECR** para imagens
-
-## 📊 Monitoramento
-
-### CloudWatch Metrics
-- Cluster CPU/Memory
-- Node CPU/Memory
-- Pod Count
-- Network I/O
-
-### Kubernetes Metrics
-```bash
-# Métricas de pods
-kubectl top pods
-
-# Métricas de nodes
-kubectl top nodes
-
-# Logs de pods
-kubectl logs -f <pod-name>
-
-# Eventos do cluster
-kubectl get events
-```
-
-## 🔧 Troubleshooting
-
-### Pods não iniciam
-```bash
-kubectl describe pod <pod-name>
-kubectl logs <pod-name>
-```
-
-### HPA não funciona
-```bash
-# Verificar Metrics Server
-kubectl get deployment metrics-server -n kube-system
-kubectl logs -n kube-system -l k8s-app=metrics-server
-
-# Verificar métricas
-kubectl top nodes
-```
-
-### LoadBalancer sem IP externo
-```bash
-kubectl describe svc fastfood-loadbalancer
-# Verificar security groups e subnets
-```
-
-## 💰 Estimativa de Custos
-
-### EKS Cluster
-- **Control Plane**: ~$73/mês
-
-### EC2 Nodes
-- **t3.medium (2 nodes)**: ~$60-80/mês
-- **Auto-scaling**: Variável baseado em carga
-
-### Load Balancer
-- **ALB**: ~$20-30/mês
-
-### ECR
-- **Storage**: ~$1-5/mês
-
-**Total Estimado**: ~$150-200/mês
-
-### Otimização de Custos
-- Use instâncias Spot para ambientes de dev
-- Configure auto-scaling adequadamente
-- Use t3.small em dev
-- Delete recursos quando não estiver usando
-
-## 🔗 Repositórios Relacionados
-
-- **[fast-food](https://github.com/fiap-software-architecture-tech/fast-food)** - Aplicação Principal
-- **[fast-food-auth](https://github.com/fiap-software-architecture-tech/fast-food-auth)** - Autenticação Lambda
-- **[fast-food-order](https://github.com/fiap-software-architecture-tech/fast-food-order)** - Microsserviço de Pedidos
-- **[fast-food-payment](https://github.com/fiap-software-architecture-tech/fast-food-payment)** - Microsserviço de Pagamentos
-- **[fast-food-cook-to-order](https://github.com/fiap-software-architecture-tech/fast-food-cook-to-order)** - Microsserviço de Cozinha
-- **[fast-food-db-infra](https://github.com/fiap-software-architecture-tech/fast-food-db-infra)** - Infraestrutura de Banco de Dados
-
-## 🧹 Cleanup
-
-### Destruir Infraestrutura
-
-```bash
-# 1. Remover recursos Kubernetes primeiro
-cd k8s
-kubectl delete -f .
-
-# 2. Destruir cluster EKS
-cd ../terraform
-terraform destroy
-
-# ATENÇÃO: Isso removerá todo o cluster e recursos associados!
-```
+### Cluster Autoscaler
+- Escala nodes automaticamente baseado em demanda
+- Min: 2 nodes, Max: 4 nodes
+- Scale down após 10 minutos de baixa utilização
 
 ## 👥 Equipe
 
