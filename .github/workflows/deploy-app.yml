@@ -57,7 +57,7 @@ jobs:
       id: ecr_uri
       working-directory: terraform
       run: |
-        echo "ecr_uri=$(terraform output -raw ecr_repository_url | tr -d '\n' | tr -d '\r')" >> $GITHUB_OUTPUT
+        echo "ecr_uri=$(terraform output --raw ecr_repository_url | tr -d '\n' | tr -d '\r')" >> $GITHUB_OUTPUT
 
     - name: Get RDS Endpoint
       id: rds_endpoint
