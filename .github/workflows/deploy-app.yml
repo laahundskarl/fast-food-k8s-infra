@@ -224,3 +224,36 @@ jobs:
         kubectl get pods -l app=fastfood-api
         kubectl get svc
         kubectl get hpa
+
+  trigger-lambdas:
+    name: 'Trigger Lambda Deploys'
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger fast-food-auth Lambda
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          repository: ${{ github.repository_owner }}/fast-food-auth
+          event-type: deploy-lambda
+
+      - name: Trigger fast-food-cook-to-order Lambda
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          repository: ${{ github.repository_owner }}/fast-food-cook-to-order
+          event-type: deploy-lambda
+
+      - name: Trigger fast-food-order Lambda
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          repository: ${{ github.repository_owner }}/fast-food-order
+          event-type: deploy-lambda
+
+      - name: Trigger fast-food-payment Lambda
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+          repository: ${{ github.repository_owner }}/fast-food-payment
+          event-type: deploy-lambda
